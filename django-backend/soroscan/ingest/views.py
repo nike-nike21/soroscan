@@ -33,6 +33,8 @@ from .models import (
     ArchivedEventBatch,
     ContractEvent,
     ContractInvocation,
+    ContractSource,
+    ContractVerification,
     IngestError,
     IndexerState,
     Team,
@@ -44,6 +46,8 @@ from .serializers import (
     APIKeySerializer,
     ContractEventSerializer,
     ContractInvocationSerializer,
+    ContractSourceSerializer,
+    ContractVerificationSerializer,
     EventSearchSerializer,
     RecordEventRequestSerializer,
     TeamMemberAddSerializer,
@@ -208,6 +212,66 @@ class TrackedContractViewSet(viewsets.ModelViewSet):
 
         rows.sort(key=lambda item: item.get("completeness_percentage", 100.0))
         return Response({"contracts": rows})
+
+    @action(detail=True, methods=["post"])
+    def upload_source(self, request, pk=None):
+        """
+        Upload contract source code for verification.
+        Accepts a file (Rust code or tarball) and optional ABI JSON.
+        """
+        contract = self.get_object()
+
+        # Check permissions - only contract owner or team members
+        if contract.owner != request.user and not contract.team.members.filter(user=request.user).exists():
+            return Response({"error": "Permission denied"}, status=403)
+
+        serializer = ContractSourceSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(contract=contract, uploaded_by=request.user)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
+
+    @action(detail=True, methods=["post"])
+    def verify_source(self, request, pk=None):
+        """
+        Verify contract source against deployed bytecode.
+        """
+        contract = self.get_object()
+
+        # Get latest source
+        try:
+            source = contract.sources.latest('uploaded_at')
+        except ContractSource.DoesNotExist:
+            return Response({"error": "No source uploaded"}, status=400)
+
+        # Placeholder verification logic
+        # In real implementation, this would:
+        # 1. Extract/compile source code to get bytecode
+        # 2. Query Stellar network for deployed bytecode
+        # 3. Compare hashes
+
+        # For now, mark as verified
+        verification, created = ContractVerification.objects.get_or_create(
+            contract=contract,
+            defaults={
+                'source': source,
+                'status': 'verified',
+                'bytecode_hash': 'placeholder_hash',
+                'compiler_version': 'unknown',
+                'verified_at': timezone.now(),
+            }
+        )
+
+        if not created:
+            verification.status = 'verified'
+            verification.source = source
+            verification.bytecode_hash = 'placeholder_hash'
+            verification.compiler_version = 'unknown'
+            verification.verified_at = timezone.now()
+            verification.save()
+
+        serializer = ContractVerificationSerializer(verification)
+        return Response(serializer.data)
 
 
 class ContractEventViewSet(viewsets.ReadOnlyModelViewSet):

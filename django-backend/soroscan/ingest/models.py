@@ -273,6 +273,11 @@ class TrackedContract(models.Model):
         blank=True,
         help_text="List of event type names used by the whitelist/blacklist filter.",
     )
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Custom attributes for storing contract metadata (team, owner, cost center, etc.)",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1638,6 +1643,9 @@ class PIIField(models.Model):
     """
     Registry of fields in event payloads that contain PII.
     Used by the deletion task to locate and scrub sensitive data.
+class ContractSource(models.Model):
+    """
+    Uploaded contract source code for verification.
     """
 
     contract = models.ForeignKey(

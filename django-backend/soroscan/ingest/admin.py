@@ -25,6 +25,8 @@ from .models import (
     ContractSigningKey,
     ContractQuota,
     DataDeletionRequest,
+    ContractSource,
+    ContractVerification,
     DataRetentionPolicy,
     EventSchema,
     IndexerState,
@@ -171,7 +173,7 @@ class TrackedContractAdmin(AdminAuditMixin, admin.ModelAdmin):
         ("Advanced", {
             "fields": (
                 "deprecation_status", "deprecation_reason",
-                "max_events_per_minute", "abi_schema", "json_schema",
+                "max_events_per_minute", "abi_schema", "json_schema", "metadata",
                 "last_indexed_ledger",
             ),
             "classes": ("collapse",),
@@ -1040,3 +1042,23 @@ class ContractDeploymentAdmin(admin.ModelAdmin):
     @admin.display(description="Bytecode Hash")
     def bytecode_hash_short(self, obj):
         return obj.bytecode_hash[:16] + "…" if obj.bytecode_hash else ""
+@admin.register(ContractSource)
+class ContractSourceAdmin(AdminAuditMixin, admin.ModelAdmin):
+    list_display = ["contract", "uploaded_by", "uploaded_at", "file_size"]
+    list_filter = ["uploaded_at"]
+    search_fields = ["contract__name", "contract__contract_id", "uploaded_by__username"]
+    readonly_fields = ["uploaded_at"]
+
+    def file_size(self, obj):
+        if obj.source_file:
+            return f"{obj.source_file.size} bytes"
+        return "—"
+    file_size.short_description = "File Size"
+
+
+@admin.register(ContractVerification)
+class ContractVerificationAdmin(AdminAuditMixin, admin.ModelAdmin):
+    list_display = ["contract", "status", "verified_at", "compiler_version"]
+    list_filter = ["status", "verified_at"]
+    search_fields = ["contract__name", "contract__contract_id"]
+    readonly_fields = ["verified_at"]

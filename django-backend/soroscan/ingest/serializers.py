@@ -10,6 +10,8 @@ from .models import (
     APIKey,
     ContractEvent,
     ContractInvocation,
+    ContractSource,
+    ContractVerification,
     Organization,
     OrganizationMembership,
     Team,
@@ -112,6 +114,7 @@ class TrackedContractSerializer(serializers.ModelSerializer):
             "max_events_per_minute",
             "event_filter_type",
             "event_filter_list",
+            "metadata",
             "last_indexed_ledger",
             "team",
             "event_count",
@@ -365,3 +368,41 @@ class EventSearchSerializer(serializers.ModelSerializer):
     def get_relevance_score(self, obj) -> float:
         # Placeholder — set to 1.0 until full-text ranking is implemented.
         return 1.0
+
+
+class ContractSourceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ContractSource model.
+    """
+
+    class Meta:
+        model = ContractSource
+        fields = [
+            "id",
+            "contract",
+            "source_file",
+            "abi_json",
+            "uploaded_by",
+            "uploaded_at",
+        ]
+        read_only_fields = ["id", "uploaded_by", "uploaded_at"]
+
+
+class ContractVerificationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for ContractVerification model.
+    """
+
+    class Meta:
+        model = ContractVerification
+        fields = [
+            "id",
+            "contract",
+            "source",
+            "status",
+            "bytecode_hash",
+            "compiler_version",
+            "verified_at",
+            "error_message",
+        ]
+        read_only_fields = ["id", "verified_at"]
