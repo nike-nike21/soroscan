@@ -19,9 +19,11 @@ from .cache_utils import get_or_set_json, query_cache_ttl, stable_cache_key
 from .models import (
     CallGraph,
     ContractDependency,
+    ContractDeployment,
     ContractEvent,
     ContractInvocation,
     ContractMetadata,
+    AuditLog,
     Notification,
     TrackedContract,
     WebhookDeliveryLog,
@@ -372,6 +374,43 @@ class NotificationType:
     link: str
     is_read: bool
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Issue #284: Contract Deployment types
+# ---------------------------------------------------------------------------
+
+@strawberry.type
+class ContractDeploymentType:
+    id: int
+    contract_id: str
+    bytecode_hash: str
+    ledger_deployed: int
+    deployer_address: str
+    is_upgrade: bool
+    abi_version: str
+    abi_snapshot: Optional[strawberry.scalars.JSON]
+    abi_compatible: Optional[bool]
+    compatibility_warnings: strawberry.scalars.JSON
+    tx_hash: str
+    deployed_at: datetime
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Issue #280: AuditLog type
+# ---------------------------------------------------------------------------
+
+@strawberry.type
+class AuditLogType:
+    id: int
+    user_id: Optional[int]
+    action: str
+    model_name: str
+    object_id: str
+    changes: strawberry.scalars.JSON
+    ip_address: str
+    timestamp: datetime
 
 
 @strawberry.type
@@ -822,6 +861,82 @@ class Query:
                 context=f"Target: {log.subscription.target_url}"
             )
             for log in logs
+        ]
+
+    # -----------------------------------------------------------------------
+    # Issue #284: Contract Deployment resolvers
+    # -----------------------------------------------------------------------
+
+    @strawberry.field
+    def contract_deployments(
+        self,
+        contract_id: str,
+        upgrades_only: bool = False,
+    ) -> list[ContractDeploymentType]:
+        """Return deployment history for a contract, newest first."""
+        qs = ContractDeployment.objects.filter(
+            contract__contract_id=contract_id
+        ).order_by("-ledger_deployed")
+        if upgrades_only:
+            qs = qs.filter(is_upgrade=True)
+        return [
+            ContractDeploymentType(
+                id=d.id,
+                contract_id=d.contract.contract_id,
+                bytecode_hash=d.bytecode_hash,
+                ledger_deployed=d.ledger_deployed,
+                deployer_address=d.deployer_address,
+                is_upgrade=d.is_upgrade,
+                abi_version=d.abi_version,
+                abi_snapshot=d.abi_snapshot,
+                abi_compatible=d.abi_compatible,
+                compatibility_warnings=d.compatibility_warnings,
+                tx_hash=d.tx_hash,
+                deployed_at=d.deployed_at,
+                created_at=d.created_at,
+            )
+            for d in qs
+        ]
+
+    # -----------------------------------------------------------------------
+    # Issue #280: AuditLog resolver
+    # -----------------------------------------------------------------------
+
+    @strawberry.field
+    def audit_logs(
+        self,
+        info: Info,
+        model_name: Optional[str] = None,
+        object_id: Optional[str] = None,
+        action: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[AuditLogType]:
+        """Query immutable audit log entries (staff only)."""
+        user = _get_authenticated_user(info)
+        if not user or not user.is_staff:
+            raise Exception("Admin access required")
+
+        qs = AuditLog.objects.order_by("-timestamp")
+        if model_name:
+            qs = qs.filter(model_name=model_name)
+        if object_id:
+            qs = qs.filter(object_id=object_id)
+        if action:
+            qs = qs.filter(action=action)
+
+        limit = max(1, min(limit, 500))
+        return [
+            AuditLogType(
+                id=e.id,
+                user_id=e.user_id,
+                action=e.action,
+                model_name=e.model_name,
+                object_id=e.object_id,
+                changes=e.changes,
+                ip_address=e.ip_address,
+                timestamp=e.timestamp,
+            )
+            for e in qs[:limit]
         ]
 
 

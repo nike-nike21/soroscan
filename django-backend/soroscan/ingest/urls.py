@@ -12,8 +12,11 @@ from .views import (
     TrackedContractViewSet,
     admin_ingest_errors_view,
     audit_trail_view,
+    compliance_export_view,
     contract_event_explorer_view,
     contract_event_types_view,
+    deletion_requests_view,
+    deployment_history_view,
     WebhookSubscriptionViewSet,
     contract_timeline_view,
     health_check,
@@ -49,4 +52,9 @@ urlpatterns = [
     path("events/restore-archive/", restore_archived_events, name="restore-archive"),
     path("audit-trail/", audit_trail_view, name="audit-trail"),
     path("admin/ingest-errors/", admin_ingest_errors_view, name="admin-ingest-errors"),
+    # Issue #280: GDPR / Data Governance
+    path("gdpr/deletion-requests/", deletion_requests_view, name="deletion-requests"),
+    path("gdpr/compliance-export/", compliance_export_view, name="compliance-export"),
+    # Issue #284: Contract Deployment History
+    path("contracts/<str:contract_id>/deployments/", deployment_history_view, name="deployment-history"),
 ]

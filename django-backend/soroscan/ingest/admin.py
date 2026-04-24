@@ -17,17 +17,21 @@ from .models import (
     APIKey,
     ArchivalAuditLog,
     ArchivedEventBatch,
+    AuditLog,
     ContractABI,
+    ContractDeployment,
     ContractEvent,
     ContractMetadata,
     ContractSigningKey,
     ContractQuota,
+    DataDeletionRequest,
     DataRetentionPolicy,
     EventSchema,
     IndexerState,
     IngestError,
     Organization,
     OrganizationMembership,
+    PIIField,
     RemediationIncident,
     RemediationRule,
     Team,
@@ -977,3 +981,62 @@ class ContractMetadataAdmin(AdminAuditMixin, admin.ModelAdmin):
     search_fields = ["name", "description", "tags"]
     list_filter = [TagListFilter]
     readonly_fields = ["created_at", "updated_at"]
+
+
+# ---------------------------------------------------------------------------
+# Issue #280: GDPR / Data Governance admin
+# ---------------------------------------------------------------------------
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ["id", "timestamp", "user", "action", "model_name", "object_id", "ip_address"]
+    list_filter = ["action", "model_name"]
+    search_fields = ["model_name", "object_id", "user__username"]
+    readonly_fields = ["id", "timestamp", "user", "action", "model_name", "object_id", "changes", "ip_address"]
+    ordering = ["-timestamp"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DataDeletionRequest)
+class DataDeletionRequestAdmin(admin.ModelAdmin):
+    list_display = ["id", "subject_user", "subject_email", "status", "requester", "requested_at", "completed_at"]
+    list_filter = ["status"]
+    search_fields = ["subject_email", "subject_user__username", "requester__username"]
+    readonly_fields = ["requested_at", "completed_at", "deleted_records", "error_detail"]
+    ordering = ["-requested_at"]
+
+
+@admin.register(PIIField)
+class PIIFieldAdmin(admin.ModelAdmin):
+    list_display = ["contract", "event_type", "field_path", "description", "created_at"]
+    list_filter = ["contract"]
+    search_fields = ["field_path", "description", "contract__contract_id"]
+    readonly_fields = ["created_at"]
+
+
+# ---------------------------------------------------------------------------
+# Issue #284: Contract Deployment admin
+# ---------------------------------------------------------------------------
+
+@admin.register(ContractDeployment)
+class ContractDeploymentAdmin(admin.ModelAdmin):
+    list_display = [
+        "id", "contract", "bytecode_hash_short", "ledger_deployed",
+        "deployer_address", "is_upgrade", "abi_version", "abi_compatible", "deployed_at",
+    ]
+    list_filter = ["is_upgrade", "abi_compatible"]
+    search_fields = ["contract__contract_id", "bytecode_hash", "deployer_address", "tx_hash"]
+    readonly_fields = ["created_at", "is_upgrade", "abi_compatible", "compatibility_warnings"]
+    ordering = ["-ledger_deployed"]
+
+    @admin.display(description="Bytecode Hash")
+    def bytecode_hash_short(self, obj):
+        return obj.bytecode_hash[:16] + "…" if obj.bytecode_hash else ""

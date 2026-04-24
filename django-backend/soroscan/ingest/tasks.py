@@ -2426,3 +2426,142 @@ def cleanup_silk_data() -> int:
         time.monotonic() - _start
     )
     return deleted_count
+
+
+# ---------------------------------------------------------------------------
+# Issue #280: GDPR / Data Governance tasks
+# ---------------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=3)
+def enforce_retention_policies(self):
+    """
+    Delete ContractEvents older than the configured retention window.
+    Respects per-contract DataRetentionPolicy; falls back to global policy.
+    Runs via Celery Beat (daily).
+    """
+    from .models import DataRetentionPolicy, ContractEvent, TrackedContract
+
+    now = timezone.now()
+    deleted_total = 0
+
+    # Collect per-contract policies
+    contract_policies = {
+        p.contract_id: p
+        for p in DataRetentionPolicy.objects.filter(contract__isnull=False).select_related("contract")
+    }
+    global_policy = DataRetentionPolicy.objects.filter(contract__isnull=True).first()
+
+    for contract in TrackedContract.objects.only("id"):
+        policy = contract_policies.get(contract.id) or global_policy
+        if policy is None:
+            continue
+        cutoff = now - timedelta(days=policy.retention_days)
+        count, _ = ContractEvent.objects.filter(contract=contract, timestamp__lt=cutoff).delete()
+        deleted_total += count
+
+    logger.info("enforce_retention_policies: deleted %d expired events", deleted_total)
+    return {"deleted": deleted_total}
+
+
+@shared_task(bind=True, max_retries=3)
+def process_deletion_requests(self):
+    """
+    Process pending GDPR DataDeletionRequests.
+    Scrubs PII-tagged payload fields and deletes user-linked records.
+    """
+    from .models import DataDeletionRequest, PIIField, ContractEvent, AuditLog
+
+    pending = DataDeletionRequest.objects.filter(status=DataDeletionRequest.STATUS_PENDING)
+    for req in pending:
+        req.status = DataDeletionRequest.STATUS_PROCESSING
+        req.save(update_fields=["status"])
+        summary: dict = {}
+        try:
+            target_user = req.subject_user
+
+            # 1. Delete API keys
+            if target_user:
+                from .models import APIKey
+                count, _ = APIKey.objects.filter(user=target_user).delete()
+                summary["APIKey"] = count
+
+                # 2. Delete webhook subscriptions owned by user
+                from .models import WebhookSubscription
+                count, _ = WebhookSubscription.objects.filter(contract__owner=target_user).delete()
+                summary["WebhookSubscription"] = count
+
+                # 3. Scrub PII fields from event payloads
+                pii_fields = PIIField.objects.filter(
+                    contract__owner=target_user
+                ).values("contract_id", "event_type", "field_path")
+
+                scrubbed = 0
+                for pf in pii_fields:
+                    qs = ContractEvent.objects.filter(contract_id=pf["contract_id"])
+                    if pf["event_type"]:
+                        qs = qs.filter(event_type=pf["event_type"])
+                    for event in qs.iterator(chunk_size=500):
+                        parts = pf["field_path"].split(".")
+                        obj = event.payload
+                        try:
+                            for part in parts[:-1]:
+                                obj = obj[part]
+                            if parts[-1] in obj:
+                                obj[parts[-1]] = "[REDACTED]"
+                                event.save(update_fields=["payload"])
+                                scrubbed += 1
+                        except (KeyError, TypeError):
+                            pass
+                summary["ContractEvent.pii_scrubbed"] = scrubbed
+
+            req.status = DataDeletionRequest.STATUS_COMPLETED
+            req.deleted_records = summary
+            req.completed_at = timezone.now()
+            req.save(update_fields=["status", "deleted_records", "completed_at"])
+            logger.info("Deletion request %d completed: %s", req.id, summary)
+
+        except Exception as exc:
+            req.status = DataDeletionRequest.STATUS_FAILED
+            req.error_detail = str(exc)
+            req.save(update_fields=["status", "error_detail"])
+            logger.exception("Deletion request %d failed", req.id)
+
+    return {"processed": pending.count()}
+
+
+@shared_task(bind=True)
+def generate_compliance_export(self, requester_user_id: int, contract_id: str | None = None):
+    """
+    Generate a CSV audit trail export for compliance auditors.
+    Returns the CSV as a string (caller should stream/save it).
+    """
+    import csv
+    import io
+    from .models import AuditLog
+
+    qs = AuditLog.objects.select_related("user").order_by("timestamp")
+    if contract_id:
+        qs = qs.filter(model_name="ContractEvent", object_id__startswith=contract_id)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["id", "timestamp", "user", "action", "model", "object_id", "ip_address", "changes"])
+    for entry in qs.iterator(chunk_size=1000):
+        writer.writerow([
+            entry.id,
+            entry.timestamp.isoformat(),
+            entry.user.username if entry.user else "",
+            entry.action,
+            entry.model_name,
+            entry.object_id,
+            entry.ip_address,
+            json.dumps(entry.changes),
+        ])
+
+    csv_content = buf.getvalue()
+    logger.info(
+        "generate_compliance_export: exported %d rows for user %d",
+        qs.count(),
+        requester_user_id,
+    )
+    return csv_content

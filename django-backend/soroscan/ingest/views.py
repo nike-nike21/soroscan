@@ -1111,3 +1111,190 @@ def rate_limit_analytics_view(request):
             "api_keys": results,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #280: GDPR / Data Governance endpoints
+# ---------------------------------------------------------------------------
+
+class DataDeletionRequestSerializer(serializers.ModelSerializer):
+    requester_username = serializers.CharField(source="requester.username", read_only=True)
+    subject_username = serializers.CharField(source="subject_user.username", read_only=True)
+
+    class Meta:
+        from .models import DataDeletionRequest
+        model = DataDeletionRequest
+        fields = [
+            "id", "requester_username", "subject_username", "subject_email",
+            "status", "reason", "deleted_records", "error_detail",
+            "requested_at", "completed_at",
+        ]
+        read_only_fields = ["status", "deleted_records", "error_detail", "requested_at", "completed_at"]
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def deletion_requests_view(request):
+    """
+    GET  /gdpr/deletion-requests/  — list all deletion requests (staff only)
+    POST /gdpr/deletion-requests/  — submit a new deletion request
+    """
+    from .models import DataDeletionRequest
+
+    if request.method == "GET":
+        if not request.user.is_staff:
+            return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+        qs = DataDeletionRequest.objects.select_related("requester", "subject_user").order_by("-requested_at")
+        ser = DataDeletionRequestSerializer(qs, many=True)
+        return Response(ser.data)
+
+    # POST — create
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    subject_user_id = request.data.get("subject_user_id")
+    subject_email = request.data.get("subject_email", "")
+    reason = request.data.get("reason", "")
+
+    subject_user = None
+    if subject_user_id:
+        try:
+            subject_user = User.objects.get(pk=subject_user_id)
+        except User.DoesNotExist:
+            return Response({"detail": "Subject user not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    req = DataDeletionRequest.objects.create(
+        requester=request.user,
+        subject_user=subject_user,
+        subject_email=subject_email,
+        reason=reason,
+    )
+    # Kick off async processing
+    from .tasks import process_deletion_requests
+    process_deletion_requests.delay()
+
+    ser = DataDeletionRequestSerializer(req)
+    return Response(ser.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compliance_export_view(request):
+    """
+    GET /gdpr/compliance-export/?contract_id=<optional>
+    Stream a CSV audit trail for compliance auditors (staff only).
+    """
+    import csv
+    from django.http import StreamingHttpResponse
+    from .models import AuditLog
+
+    if not request.user.is_staff:
+        return Response({"detail": "Admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+    contract_id = request.query_params.get("contract_id")
+    qs = AuditLog.objects.select_related("user").order_by("timestamp")
+    if contract_id:
+        qs = qs.filter(model_name="ContractEvent", object_id__startswith=contract_id)
+
+    def _rows():
+        yield ",".join(["id", "timestamp", "user", "action", "model", "object_id", "ip_address", "changes"]) + "\n"
+        for entry in qs.iterator(chunk_size=1000):
+            row = [
+                str(entry.id),
+                entry.timestamp.isoformat(),
+                entry.user.username if entry.user else "",
+                entry.action,
+                entry.model_name,
+                entry.object_id,
+                entry.ip_address,
+                json.dumps(entry.changes).replace('"', '""'),
+            ]
+            yield ",".join(f'"{v}"' for v in row) + "\n"
+
+    response = StreamingHttpResponse(_rows(), content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="compliance_export.csv"'
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Issue #284: Contract Deployment History endpoint
+# ---------------------------------------------------------------------------
+
+class ContractDeploymentSerializer(serializers.ModelSerializer):
+    contract_id = serializers.CharField(source="contract.contract_id", read_only=True)
+
+    class Meta:
+        from .models import ContractDeployment
+        model = ContractDeployment
+        fields = [
+            "id", "contract_id", "bytecode_hash", "ledger_deployed",
+            "deployer_address", "is_upgrade", "abi_version", "abi_snapshot",
+            "abi_compatible", "compatibility_warnings", "tx_hash", "deployed_at",
+            "created_at",
+        ]
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def deployment_history_view(request, contract_id: str):
+    """
+    GET  /contracts/<contract_id>/deployments/  — list deployment history
+    POST /contracts/<contract_id>/deployments/  — record a new deployment
+    """
+    from .models import ContractDeployment
+
+    contract = get_object_or_404(TrackedContract, contract_id=contract_id)
+
+    if request.method == "GET":
+        qs = ContractDeployment.objects.filter(contract=contract).order_by("-ledger_deployed")
+        ser = ContractDeploymentSerializer(qs, many=True)
+        return Response(ser.data)
+
+    # POST — record deployment
+    bytecode_hash = request.data.get("bytecode_hash", "")
+    ledger_deployed = request.data.get("ledger_deployed")
+    deployer_address = request.data.get("deployer_address", "")
+    abi_version = request.data.get("abi_version", "")
+    abi_snapshot = request.data.get("abi_snapshot")
+    tx_hash = request.data.get("tx_hash", "")
+    deployed_at = request.data.get("deployed_at")
+
+    if not bytecode_hash or not ledger_deployed or not deployer_address or not deployed_at:
+        return Response(
+            {"detail": "bytecode_hash, ledger_deployed, deployer_address, and deployed_at are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Detect upgrade: previous deployment with different bytecode hash
+    previous = ContractDeployment.objects.filter(contract=contract).order_by("-ledger_deployed").first()
+    is_upgrade = bool(previous and previous.bytecode_hash != bytecode_hash)
+
+    # Basic ABI compatibility check
+    abi_compatible = None
+    compatibility_warnings = []
+    if is_upgrade and previous and previous.abi_snapshot and abi_snapshot:
+        prev_names = {e.get("name") for e in (previous.abi_snapshot or []) if isinstance(e, dict)}
+        new_names = {e.get("name") for e in (abi_snapshot or []) if isinstance(e, dict)}
+        removed = prev_names - new_names
+        if removed:
+            compatibility_warnings = [f"Removed event(s): {', '.join(sorted(removed))}"]
+            abi_compatible = False
+        else:
+            abi_compatible = True
+
+    deployment = ContractDeployment.objects.create(
+        contract=contract,
+        bytecode_hash=bytecode_hash,
+        ledger_deployed=ledger_deployed,
+        deployer_address=deployer_address,
+        is_upgrade=is_upgrade,
+        abi_version=abi_version,
+        abi_snapshot=abi_snapshot,
+        abi_compatible=abi_compatible,
+        compatibility_warnings=compatibility_warnings,
+        tx_hash=tx_hash,
+        deployed_at=deployed_at,
+    )
+
+    ser = ContractDeploymentSerializer(deployment)
+    return Response(ser.data, status=status.HTTP_201_CREATED)

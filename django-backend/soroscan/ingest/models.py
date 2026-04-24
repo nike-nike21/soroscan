@@ -1520,3 +1520,231 @@ class ContractMetadata(models.Model):
 
     def __str__(self):
         return f"Metadata({self.contract.contract_id[:8]}...)"
+
+
+# ---------------------------------------------------------------------------
+# Issue #280: GDPR Data Governance Framework
+# ---------------------------------------------------------------------------
+
+class AuditLog(models.Model):
+    """
+    Immutable audit log for every data mutation (create/update/delete).
+    Append-only: save() raises on update, delete() raises always.
+    """
+
+    ACTION_CREATE = "create"
+    ACTION_UPDATE = "update"
+    ACTION_DELETE = "delete"
+    ACTION_CHOICES = [
+        (ACTION_CREATE, "Create"),
+        (ACTION_UPDATE, "Update"),
+        (ACTION_DELETE, "Delete"),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="audit_logs",
+    )
+    action = models.CharField(max_length=16, choices=ACTION_CHOICES, db_index=True)
+    model_name = models.CharField(max_length=64, db_index=True)
+    object_id = models.CharField(max_length=255, db_index=True)
+    changes = models.JSONField(default=dict, help_text="Before/after snapshot of changed fields")
+    ip_address = models.GenericIPAddressField(default="0.0.0.0")
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["model_name", "object_id"]),
+            models.Index(fields=["user", "timestamp"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("AuditLog is immutable and cannot be updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("AuditLog is immutable and cannot be deleted.")
+
+    def __str__(self):
+        return f"[{self.action}] {self.model_name}:{self.object_id} by {self.user_id}"
+
+
+class DataDeletionRequest(models.Model):
+    """
+    GDPR 'right to be forgotten' request. Tracks deletion of all PII-tagged data
+    for a given user/subject.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_PROCESSING = "processing"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    requester = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deletion_requests_made",
+        help_text="Staff user who submitted the request",
+    )
+    subject_user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deletion_requests_received",
+        help_text="User whose data should be deleted",
+    )
+    subject_email = models.EmailField(
+        blank=True,
+        help_text="Email of the data subject (used when subject_user is unknown)",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+    )
+    reason = models.TextField(blank=True, help_text="Reason for the deletion request")
+    deleted_records = models.JSONField(
+        default=dict,
+        help_text="Summary of deleted records per model after processing",
+    )
+    error_detail = models.TextField(blank=True)
+    requested_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        subject = self.subject_user or self.subject_email or "unknown"
+        return f"DeletionRequest({subject}, {self.status})"
+
+
+class PIIField(models.Model):
+    """
+    Registry of fields in event payloads that contain PII.
+    Used by the deletion task to locate and scrub sensitive data.
+    """
+
+    contract = models.ForeignKey(
+        TrackedContract,
+        on_delete=models.CASCADE,
+        related_name="pii_fields",
+    )
+    event_type = models.CharField(
+        max_length=128,
+        blank=True,
+        help_text="Event type this field applies to (blank = all event types)",
+    )
+    field_path = models.CharField(
+        max_length=256,
+        help_text="Dot-notation path into the event payload, e.g. 'user.email'",
+    )
+    description = models.CharField(max_length=256, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("contract", "event_type", "field_path")]
+        ordering = ["contract", "event_type", "field_path"]
+
+    def __str__(self):
+        return f"PII: {self.contract.contract_id[:8]}…/{self.event_type or '*'}/{self.field_path}"
+
+
+# ---------------------------------------------------------------------------
+# Issue #284: Contract Deployment Tracking
+# ---------------------------------------------------------------------------
+
+class ContractDeployment(models.Model):
+    """
+    Tracks every deployment (initial deploy or upgrade) of a contract.
+    Upgrade detection: a new row with a different bytecode_hash for the same
+    contract_id signals an upgrade.
+    """
+
+    contract = models.ForeignKey(
+        TrackedContract,
+        on_delete=models.CASCADE,
+        related_name="deployments",
+    )
+    bytecode_hash = models.CharField(
+        max_length=64,
+        db_index=True,
+        help_text="SHA-256 hash of the deployed WASM bytecode",
+    )
+    ledger_deployed = models.PositiveBigIntegerField(
+        db_index=True,
+        help_text="Ledger sequence at which this deployment was confirmed",
+    )
+    deployer_address = models.CharField(
+        max_length=56,
+        db_index=True,
+        help_text="Stellar account address (G…) that deployed the contract",
+    )
+    is_upgrade = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="True when this deployment replaces a previous bytecode hash",
+    )
+    abi_version = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Optional semantic version tag for the ABI at this deployment",
+    )
+    abi_snapshot = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="ABI JSON captured at deployment time for historical reference",
+    )
+    abi_compatible = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="True if ABI is backward-compatible with the previous deployment; null if unknown",
+    )
+    compatibility_warnings = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of ABI incompatibility warning strings",
+    )
+    tx_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Transaction hash of the deployment transaction",
+    )
+    deployed_at = models.DateTimeField(
+        db_index=True,
+        help_text="Timestamp of the deployment",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-ledger_deployed"]
+        indexes = [
+            models.Index(fields=["contract", "ledger_deployed"]),
+            models.Index(fields=["bytecode_hash"]),
+            models.Index(fields=["is_upgrade"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contract", "ledger_deployed", "bytecode_hash"],
+                name="unique_contract_ledger_bytecode",
+            )
+        ]
+
+    def __str__(self):
+        tag = "UPGRADE" if self.is_upgrade else "DEPLOY"
+        return f"[{tag}] {self.contract.contract_id[:8]}… @ ledger {self.ledger_deployed}"
