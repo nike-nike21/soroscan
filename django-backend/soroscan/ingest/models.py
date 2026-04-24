@@ -1643,9 +1643,6 @@ class PIIField(models.Model):
     """
     Registry of fields in event payloads that contain PII.
     Used by the deletion task to locate and scrub sensitive data.
-class ContractSource(models.Model):
-    """
-    Uploaded contract source code for verification.
     """
 
     contract = models.ForeignKey(
@@ -1670,7 +1667,7 @@ class ContractSource(models.Model):
         ordering = ["contract", "event_type", "field_path"]
 
     def __str__(self):
-        return f"PII: {self.contract.contract_id[:8]}…/{self.event_type or '*'}/{self.field_path}"
+        return f"PII: {self.contract.contract_id[:8]}.../{self.event_type or '*'}/{self.field_path}"
 
 
 # ---------------------------------------------------------------------------
