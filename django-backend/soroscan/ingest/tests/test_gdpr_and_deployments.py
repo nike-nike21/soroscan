@@ -4,7 +4,6 @@ Tests for #280 GDPR data governance and #284 contract deployment tracking.
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -16,7 +15,6 @@ from soroscan.ingest.models import (
     ContractVerification,
     DataDeletionRequest,
     PIIField,
-    TrackedContract,
 )
 from soroscan.ingest.tasks import (
     detect_contract_upgrades,

@@ -2494,7 +2494,6 @@ def process_deletion_requests() -> dict[str, Any]:
                     continue
 
                 # Find events whose payload contains the subject_identifier
-                from django.db.models import Q
                 events = ContractEvent.objects.filter(contract=contract)
                 for pii in pii_fields:
                     # Filter events by event_type if specified
@@ -2577,7 +2576,7 @@ def detect_contract_upgrades() -> dict[str, Any]:
         is_upgrade = previous is not None
         ledger = contract.last_indexed_ledger or 0
 
-        deployment = ContractDeployment.objects.create(
+        ContractDeployment.objects.create(
             contract=contract,
             bytecode_hash=bytecode_hash,
             ledger_deployed=ledger,
