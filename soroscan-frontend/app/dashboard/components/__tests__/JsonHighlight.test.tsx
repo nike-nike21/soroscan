@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act } from "react";
 import { JsonHighlight } from "../JsonHighlight";
 
 describe("JsonHighlight", () => {
@@ -16,6 +17,10 @@ describe("JsonHighlight", () => {
         writeText: jest.fn(() => Promise.resolve()),
       },
     });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it("renders JSON data with syntax highlighting", () => {
@@ -78,13 +83,14 @@ describe("JsonHighlight", () => {
     });
     
     // Fast-forward 2 seconds
-    jest.advanceTimersByTime(2000);
+    await act(async () => {
+      jest.advanceTimersByTime(2000);
+    });
     
     await waitFor(() => {
       expect(screen.getByText(/📋 Copy/)).toBeInTheDocument();
     });
     
-    jest.useRealTimers();
   });
 
   it("respects custom maxHeight prop", () => {

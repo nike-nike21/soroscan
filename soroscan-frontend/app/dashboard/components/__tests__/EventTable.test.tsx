@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act } from "react";
 import { EventTable } from "../EventTable";
 import type { EventRecord } from "@/components/ingest/types";
 
@@ -38,6 +39,10 @@ describe("EventTable", () => {
         writeText: jest.fn(() => Promise.resolve()),
       },
     });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   describe("Loading State (issue #595)", () => {
@@ -189,13 +194,14 @@ describe("EventTable", () => {
       });
 
       // After 2 seconds, should revert to clipboard icon
-      jest.advanceTimersByTime(2000);
+      await act(async () => {
+        jest.advanceTimersByTime(2000);
+      });
 
       await waitFor(() => {
         expect(copyButtons[0]).toHaveTextContent("📋");
       });
 
-      jest.useRealTimers();
     });
 
     it("applies hover effects to event rows", () => {

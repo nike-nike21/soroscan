@@ -1,8 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/refs */
 import React from 'react';
-
-// Track open state globally for the mock
-let globalOpen = false;
-let globalOnOpenChange: ((open: boolean) => void) | null = null;
 
 export const Root = ({ children, open, onOpenChange, defaultOpen }: any) => {
   const [isOpen, setIsOpen] = React.useState(open ?? defaultOpen ?? false);
@@ -10,17 +7,11 @@ export const Root = ({ children, open, onOpenChange, defaultOpen }: any) => {
   React.useEffect(() => {
     if (open !== undefined) {
       setIsOpen(open);
-      globalOpen = open;
     }
   }, [open]);
 
-  React.useEffect(() => {
-    globalOnOpenChange = onOpenChange || null;
-  }, [onOpenChange]);
-
   const handleOpenChange = React.useCallback((newOpen: boolean) => {
     setIsOpen(newOpen);
-    globalOpen = newOpen;
     onOpenChange?.(newOpen);
   }, [onOpenChange]);
 
@@ -85,6 +76,7 @@ Overlay.displayName = 'DialogOverlay';
 
 export const Content = React.forwardRef(({ children, onEscapeKeyDown, onPointerDownOutside, ...props }: any, ref: any) => {
   const context = React.useContext(DialogContext);
+  void onPointerDownOutside;
   
   React.useEffect(() => {
     if (!context?.open) return;
@@ -149,4 +141,3 @@ export const Close = React.forwardRef(({ children, onClick, ...props }: any, ref
   return React.createElement('button', { ref, onClick: handleClick, ...props }, children);
 });
 Close.displayName = 'DialogClose';
-

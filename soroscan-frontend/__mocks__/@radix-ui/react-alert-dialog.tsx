@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/refs */
 import React from 'react';
 
 export const Root = ({ children, open, onOpenChange, defaultOpen }: any) => {

@@ -13,31 +13,14 @@ const ToastTrigger = () => {
 };
 
 describe("Toast System", () => {
-  // Suppress React act() warnings for timer-based state updates
-  // These are expected in this test suite and don't indicate actual problems
-  const originalError = console.error;
-  beforeAll(() => {
-    console.error = (...args: any[]) => {
-      if (
-        typeof args[0] === 'string' &&
-        args[0].includes('An update to ToastProvider inside a test was not wrapped in act')
-      ) {
-        return;
-      }
-      originalError.call(console, ...args);
-    };
-  });
-
-  afterAll(() => {
-    console.error = originalError;
-  });
-
   beforeEach(() => {
     jest.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
     jest.useRealTimers();
   });
 
