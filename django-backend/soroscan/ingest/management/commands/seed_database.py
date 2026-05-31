@@ -19,10 +19,8 @@ Clear mode removes all seeded data (users with is_staff=False and emails ending 
 import json
 import random
 import string
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import factory
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone as django_tz
 
@@ -470,7 +468,6 @@ class Command(BaseCommand):
                     pass
 
     def _seed_alert_rules(self, rules_data: list, contracts: dict, users: dict):
-        user = next(iter(users.values())) if users else None
         for rd in rules_data:
             contract = contracts.get(rd["contract_id"])
             if not contract:

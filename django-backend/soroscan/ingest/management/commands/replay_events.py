@@ -256,7 +256,7 @@ class Command(BaseCommand):
                 elif "fail" in status or (status_code and status_code >= 400):
                     style = self.style.ERROR
                 else:
-                    style = lambda x: x
+                    def style(x): return x
                 self.stdout.write(
                     f"  Event {delivery['event_id']} ({delivery['event_type']}@{delivery['ledger']}) "
                     f"-> Webhook {delivery['webhook_id']}: {style(status)} {status_code or ''}".rstrip()
