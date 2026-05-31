@@ -19,6 +19,7 @@ Clear mode removes all seeded data (users with is_staff=False and emails ending 
 import json
 import random
 import string
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
