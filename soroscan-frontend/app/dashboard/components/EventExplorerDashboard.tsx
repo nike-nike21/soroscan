@@ -16,7 +16,8 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { useContractEventSubscription } from "@/src/hooks/useContractEventSubscription";
 import { SubscriptionStatusBadge } from "@/components/ui/SubscriptionStatusBadge";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE_STORAGE_KEY = "soroscan:page-size";
+const DEFAULT_PAGE_SIZE = 25;
 
 interface Filters {
   contractId: string;
@@ -195,18 +196,18 @@ export function EventExplorerDashboard() {
       setError(null);
 
       try {
-        const offset = (currentPage - 1) * PAGE_SIZE;
+        const offset = (currentPage - 1) * pageSize;
         const result = await fetchExplorerEvents({
           contractId: filters.contractId,
           eventType: filters.eventType || null,
-          limit: PAGE_SIZE + 1,
+          limit: pageSize + 1,
           offset,
           since: filters.since || null,
           until: filters.until || null,
         });
 
-        const nextExists = result.length > PAGE_SIZE;
-        const visibleEvents = nextExists ? result.slice(0, PAGE_SIZE) : result;
+        const nextExists = result.length > pageSize;
+        const visibleEvents = nextExists ? result.slice(0, pageSize) : result;
         
         setEvents(visibleEvents);
         setHasNext(nextExists);
@@ -221,7 +222,7 @@ export function EventExplorerDashboard() {
     };
 
     loadEvents();
-  }, [filters.contractId, filters.eventType, filters.since, filters.until, currentPage]);
+  }, [filters.contractId, filters.eventType, filters.since, filters.until, currentPage, pageSize]);
 
   // Subscribe to real-time events
   const { events: realTimeEvents, connectionState } = useContractEventSubscription({
@@ -431,7 +432,12 @@ export function EventExplorerDashboard() {
     [filteredEvents, showToast],
   );
 
-  const startIndex = (currentPage - 1) * PAGE_SIZE + 1;
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
+  }, [setPageSize]);
+
+  const startIndex = (currentPage - 1) * pageSize + 1;
   const endIndex = startIndex + filteredEvents.length - 1;
 
   return (
@@ -531,6 +537,8 @@ export function EventExplorerDashboard() {
             startIndex={startIndex}
             endIndex={endIndex}
             totalCount={totalCount}
+            pageSize={pageSize}
+            onPageSizeChange={handlePageSizeChange}
           />
         </section>
       </main>
