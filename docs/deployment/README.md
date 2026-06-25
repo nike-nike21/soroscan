@@ -1,5 +1,6 @@
 ---
-id: deployment/overview
+slug: /deployment/overview
+
 title: Production Deployment & Operations Guide
 description: How to deploy, monitor, and operate SoroScan in production.
 sidebar_label: Deployment & Ops
@@ -14,14 +15,14 @@ import TabItem from '@theme/TabItem';
 This guide covers recommended production deployments for SoroScan, including local Docker Compose, Kubernetes (Helm + Terraform), an AWS/EKS example, monitoring, backups, security, runbooks, and troubleshooting.
 
 **Quick links**
-- [Docker Compose](deployment/docker-compose)
-- [Kubernetes (Helm)](deployment/kubernetes)
-- [AWS EKS (Terraform)](deployment/aws)
-- [Monitoring & Observability](deployment/monitoring)
-- [Backups & Disaster Recovery](deployment/backups)
-- [Troubleshooting & Runbooks](deployment/runbooks)
-- [Security Checklist](deployment/security)
-- [Cost Estimates](deployment/costs)
+- [Docker Compose](./docker-compose)
+- [Kubernetes (Helm)](./kubernetes)
+- [AWS EKS (Terraform)](./aws)
+- [Monitoring & Observability](./monitoring)
+- [Backups & Disaster Recovery](./backups)
+- [Troubleshooting & Runbooks](./runbooks)
+- [Security Checklist](./security)
+- [Cost Estimates](./costs)
 
 ## Decision tree
 

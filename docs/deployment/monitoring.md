@@ -1,5 +1,6 @@
 ---
-id: deployment/monitoring
+slug: /deployment/monitoring
+
 title: Monitoring & Observability
 description: Prometheus, Grafana, logging, alerting, and SLOs for SoroScan.
 sidebar_label: Monitoring

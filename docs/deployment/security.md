@@ -1,5 +1,6 @@
 ---
-id: deployment/security
+slug: /deployment/security
+
 title: Security Checklist
 description: Network policies, secrets, TLS, and hardening recommendations for production.
 sidebar_label: Security
