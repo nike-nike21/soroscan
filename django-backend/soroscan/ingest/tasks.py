@@ -81,6 +81,8 @@ _task_profilers: dict[str, tuple] = {}
 
 @task_prerun.connect
 def _start_task_profiling(task_id: str, task, **kwargs) -> None:
+    if not getattr(settings, "CELERY_TASK_PROFILING_ENABLED", False):
+        return
     profiler = cProfile.Profile()
     profiler.enable()
     _task_profilers[task_id] = (profiler, time.monotonic())

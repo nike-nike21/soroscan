@@ -7,6 +7,7 @@ from django.contrib.admin.helpers import ActionForm, ACTION_CHECKBOX_NAME
 from django.db.models import Count
 from django.http import HttpResponse, StreamingHttpResponse
 from django.urls import path, reverse
+from django.utils.html import escape
 from django.utils.html import format_html
 import csv
 import json
@@ -571,7 +572,7 @@ class ContractEventAdmin(AdminAuditMixin, admin.ModelAdmin):
             )
             rows_html = "".join(
                 f"<tr><td>{i + 1}</td><td>{q['freq']}</td>"
-                f"<td><pre style='white-space:pre-wrap;max-width:70ch'>{q['query'][:500]}</pre></td></tr>"
+                f"<td><pre style='white-space:pre-wrap;max-width:70ch'>{escape(q['query'][:500])}</pre></td></tr>"
                 for i, q in enumerate(top_queries)
             )
             silk_status = "Silk is active — showing top queries by frequency."

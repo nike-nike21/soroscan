@@ -403,6 +403,25 @@ class TestRecordEventView:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "contract_id" in response.data
 
+    def test_record_event_rate_limit_returns_429_with_retry_after(
+        self,
+        authenticated_client,
+        settings,
+    ):
+        cache.clear()
+        settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["ingest"] = "1/minute"
+
+        url = reverse("record-event")
+        data = {"event_type": "swap"}
+
+        first = authenticated_client.post(url, data, format="json")
+        second = authenticated_client.post(url, data, format="json")
+
+        assert first.status_code == status.HTTP_400_BAD_REQUEST
+        assert second.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        assert "Retry-After" in second
+        assert "throttled" in str(second.data["detail"]).lower()
+
 
 @pytest.mark.django_db
 class TestWebhookPingEndpoint:

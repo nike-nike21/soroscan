@@ -321,6 +321,7 @@ CELERY_TIMEZONE = TIME_ZONE
 # Graceful shutdown: wait up to 30s for active tasks after SIGTERM
 CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT = 30
 SHUTDOWN_TIMEOUT_SECONDS = env.int("SHUTDOWN_TIMEOUT_SECONDS", default=30)
+CELERY_TASK_PROFILING_ENABLED = env.bool("CELERY_TASK_PROFILING_ENABLED", default=DEBUG)
 CELERY_TASK_ROUTES = {
     "ingest.tasks.ingest_latest_events": {"queue": "high_priority"},
     "ingest.tasks.dispatch_webhook": {"queue": "default"},

@@ -52,6 +52,7 @@ const InputField = React.forwardRef<HTMLInputElement, InputFieldProps>(
   const errorMessage = typeof error === "string" ? error : ""
   const hasError = Boolean(error)
   const showErrorMessage = Boolean(errorMessage)
+  const validationState = hasError ? "error" : inputProps.state
 
   const describedBy = [
     hint && !hasError ? hintId : null,
@@ -66,18 +67,19 @@ const InputField = React.forwardRef<HTMLInputElement, InputFieldProps>(
       className={cn("grid gap-2", containerClassName)}
     >
       {label !== undefined && label !== null ? (
-        <Label htmlFor={id} className={labelClassName}>
+        <Label htmlFor={id} required={inputProps.required} className={labelClassName}>
           {label}
         </Label>
       ) : null}
       <Input
         ref={ref}
         id={id}
+        {...inputProps}
         aria-invalid={hasError ? true : undefined}
         aria-errormessage={showErrorMessage ? errorId : undefined}
         aria-describedby={describedBy || undefined}
         className={className}
-        {...inputProps}
+        state={validationState}
       />
       {hint !== undefined && hint !== null && !hasError ? (
         <p

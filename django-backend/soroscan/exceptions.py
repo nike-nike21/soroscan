@@ -1,3 +1,4 @@
+from rest_framework.exceptions import Throttled
 from rest_framework.views import exception_handler
 
 def custom_exception_handler(exc, context):
@@ -13,5 +14,7 @@ def custom_exception_handler(exc, context):
         request = context.get('request')
         if request and hasattr(request, 'request_id'):
             response.data["request_id"] = request.request_id
+        if isinstance(exc, Throttled) and getattr(exc, "wait", None):
+            response["Retry-After"] = str(int(exc.wait))
 
     return response

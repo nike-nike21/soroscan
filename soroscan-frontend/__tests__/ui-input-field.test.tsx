@@ -22,6 +22,17 @@ describe("InputField", () => {
     expect(input).toHaveAttribute("aria-errormessage", "name-error")
     const alert = screen.getByRole("alert")
     expect(alert).toHaveTextContent("Required")
+    expect(input).toHaveAttribute("data-state", "error")
+  })
+
+  it("passes success state through when valid", () => {
+    render(<InputField label="Name" id="name" state="success" />)
+    expect(screen.getByLabelText("Name")).toHaveAttribute("data-state", "success")
+  })
+
+  it("shows required indicator on the label", () => {
+    render(<InputField label="Email" id="email" required />)
+    expect(screen.getByText("*")).toBeInTheDocument()
   })
 
   it("links hint via aria-describedby when there is no error", () => {

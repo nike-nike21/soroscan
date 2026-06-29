@@ -5,7 +5,8 @@ This guide explains how to identify and fix performance bottlenecks across the f
 ## Performance Profiling Tools
 
 - Django Debug Toolbar for request-level timing and SQL inspection.
-- Django Silk for request profiling and middleware tracing.
+- Django Silk for request profiling and middleware tracing. Enable it with
+  `ENABLE_SILK=true`, then open `/silk/` as an admin user.
 - PostgreSQL `EXPLAIN ANALYZE` for query cost and plan analysis.
 - Redis monitoring with `redis-cli monitor`, `INFO`, and external dashboards.
 - Chrome DevTools, Lighthouse, and WebPageTest for frontend performance.
@@ -15,7 +16,9 @@ This guide explains how to identify and fix performance bottlenecks across the f
 - Use indexes on frequently filtered and joined columns.
 - Prevent N+1 queries with `select_related` and `prefetch_related`.
 - Tune connection pooling and database timeouts in `DATABASE_URL`/`pgbouncer`.
-- Analyze slow queries using PostgreSQL logs and `EXPLAIN`.
+- Analyze slow queries using `django-backend/logs/slow_queries.log`, the Django
+  admin slow query report at `/admin/ingest/contractevent/slow-query-report/`,
+  PostgreSQL logs, and `EXPLAIN`.
 
 Example PostgreSQL query review:
 
@@ -49,8 +52,17 @@ SELECT * FROM ingest_event WHERE contract_id = '...';
 
 - Establish baselines for response time, throughput, and error rates.
 - Track performance trends in dashboards and alerts.
-- Use Grafana or equivalent tools for ongoing visibility.
+- Import `k8s/grafana-dashboard.json` into Grafana with a Prometheus datasource
+  to inspect API latency histograms, Celery task runtime, database timings, and
+  slow-query indicators while staying offline from external APM vendors.
 - Document before/after optimization results with metrics.
+
+## Celery Profiling
+
+Set `CELERY_TASK_PROFILING_ENABLED=true` to collect `cProfile` stats for tasks
+that exceed five seconds. Slow task profiles are written to application logs so
+operators can compare cumulative time and identify bottleneck functions. Leave
+this disabled in production unless you are actively investigating a slowdown.
 
 ## Practical Guidance
 
